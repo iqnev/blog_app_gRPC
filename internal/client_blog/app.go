@@ -2,6 +2,7 @@ package client_blog
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -12,18 +13,22 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/hashicorp/go-hclog"
 	"github.com/iqnev/blog_app_gRPC/internal/client_blog/rest"
+	protos "github.com/iqnev/blog_app_gRPC/proto/blog"
 )
 
 type App struct {
 	Router *mux.Router
 	Log    hclog.Logger
+	Blog   protos.BlogServiceClient
+	client protos.BlogService_ListBlogsClient
 }
 
-type RequestHandlerFunction func(w http.ResponseWriter, r *http.Request)
+type RequestHandlerFunction func(w http.ResponseWriter, r *http.Request, b protos.BlogServiceClient)
 
-func (a *App) Initialize(l hclog.Logger) {
+func (a *App) Initialize(l hclog.Logger, b protos.BlogServiceClient) {
 	a.Log = l
 	a.Router = mux.NewRouter()
+	a.Blog = b
 	a.setRouters()
 
 }
@@ -31,7 +36,7 @@ func (a *App) Initialize(l hclog.Logger) {
 func (a *App) Run() {
 	cor := gohandlers.CORS(gohandlers.AllowedOrigins([]string{"*"}))
 	serv := &http.Server{
-		Addr:         ":8989",
+		Addr:         ":8787",
 		Handler:      cor(a.Router),
 		IdleTimeout:  120 * time.Second,
 		ReadTimeout:  1 * time.Second,
@@ -63,7 +68,14 @@ func (a *App) Run() {
 }
 
 func (a *App) setRouters() {
-	a.Get("/blogs", a.handleRequest(rest.GetAllBlogs))
+	a.Get("/blogs", MiddlewareValidateBlog(a.handleRequest(rest.GetAllBlogs)))
+}
+
+func MiddlewareValidateBlog(next http.HandlerFunc) http.HandlerFunc {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		fmt.Println("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+		next.ServeHTTP(w, req)
+	})
 }
 
 // Get wraps the router for GET method
@@ -88,6 +100,6 @@ func (a *App) Delete(path string, f func(w http.ResponseWriter, r *http.Request)
 
 func (a *App) handleRequest(handler RequestHandlerFunction) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		handler(w, r)
+		handler(w, r, a.Blog)
 	}
 }
